@@ -9,10 +9,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -42,13 +45,21 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.*
-import com.example.ui.ConsoleViewModel
+import com.example.ui.*
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Handle uncaught exceptions gracefully with diagnostic logcat messages
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            android.util.Log.e("CRASH_HANDLER", "CRITICAL ERROR: Uncaught exception in thread ${thread.name}", throwable)
+            // Still let the system handle standard crash behavior or exit
+            System.exit(1)
+        }
+
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
@@ -95,9 +106,13 @@ fun CloudConsoleApp(viewModel: ConsoleViewModel) {
         ) {
             when (activeTab) {
                 "CONSOLE" -> ConsoleTabContent(viewModel)
+                "TERMUX" -> TermuxTabContent(viewModel)
+                "LIVE" -> LiveModeTabContent(viewModel)
+                "SKILLS" -> SkillsTabContent(viewModel)
                 "FILES" -> FilesTabContent(viewModel)
                 "PROMPTS" -> PromptsTabContent(viewModel)
                 "OPENCL" -> OpenClTabContent(viewModel)
+                "SETTINGS" -> SettingsTabContent(viewModel)
             }
         }
     }
@@ -984,46 +999,921 @@ fun OpenClTabContent(viewModel: ConsoleViewModel) {
 // --- BOTTOM PERSISTENT NAVIGATION BAR ---
 @Composable
 fun ConsoleNavigationFooter(activeTab: String, onTabSelected: (String) -> Unit) {
-    NavigationBar(
-        containerColor = RetroBackground,
+    Surface(
+        color = RetroBackground,
+        tonalElevation = 8.dp,
         modifier = Modifier
             .fillMaxWidth()
             .border(width = 1.dp, color = Color.White.copy(alpha = 0.05f))
-            .height(72.dp),
-        tonalElevation = 8.dp
+            .height(64.dp)
     ) {
         val navTabs = listOf(
             Triple("CONSOLE", "Console", Icons.Default.Terminal),
+            Triple("TERMUX", "Termux", Icons.Default.Code),
+            Triple("LIVE", "Live Mode", Icons.Default.Mic),
+            Triple("SKILLS", "Skills", Icons.Default.Extension),
             Triple("FILES", "Files", Icons.Default.Folder),
             Triple("PROMPTS", "Prompts", Icons.Default.Memory),
-            Triple("OPENCL", "Acceleration", Icons.Default.Hardware)
+            Triple("OPENCL", "Accel", Icons.Default.Hardware),
+            Triple("SETTINGS", "Settings", Icons.Default.Settings)
         )
 
-        navTabs.forEach { (route, name, icon) ->
-            val isSelected = activeTab == route
-            NavigationBarItem(
-                selected = isSelected,
-                onClick = { onTabSelected(route) },
-                icon = {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            navTabs.forEach { (route, name, icon) ->
+                val isSelected = activeTab == route
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (isSelected) RetroOlive else Color.Transparent)
+                        .clickable { onTabSelected(route) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .testTag("nav_${name.lowercase()}"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     Icon(
                         imageVector = icon,
                         contentDescription = name,
-                        tint = if (isSelected) RetroGreen else Color.White.copy(alpha = 0.5f)
+                        tint = if (isSelected) RetroGreen else Color.White.copy(alpha = 0.5f),
+                        modifier = Modifier.size(16.dp)
                     )
-                },
-                label = {
                     Text(
                         text = name,
                         color = if (isSelected) RetroGreen else Color.White.copy(alpha = 0.5f),
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp)
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ==========================================
+// --- NEW TAB: EMBEDDED TERMUX TERMINAL ---
+// ==========================================
+@Composable
+fun TermuxTabContent(viewModel: ConsoleViewModel) {
+    val logs by viewModel.termuxConsoleLogs.collectAsStateWithLifecycle()
+    val command by viewModel.termuxCommand.collectAsStateWithLifecycle()
+    val listState = rememberLazyListState()
+    
+    LaunchedEffect(logs.size) {
+        if (logs.isNotEmpty()) {
+            listState.animateScrollToItem(logs.size - 1)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(12.dp)
+    ) {
+        Text(
+            text = "💻 RETRO TERMUX TERMINAL SECURED GATEWAY",
+            color = RetroGreen,
+            style = MaterialTheme.typography.titleMedium
+        )
+        Text(
+            text = "Connected profiles: siewkagaming@gmail.com // Sandbox container active",
+            color = RetroText.copy(alpha = 0.5f),
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        // Monospaced virtual screen
+        Box(
+            modifier = Modifier
+                .weight(1.0f)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.Black)
+                .border(2.dp, RetroGreen.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                .padding(12.dp)
+        ) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(logs) { line ->
+                    Text(
+                        text = line,
+                        color = if (line.startsWith("root@Ω-16:~#")) RetroGreen else RetroText,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(vertical = 1.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Quick macro keys row (like Termux macro row!)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            val macroKeys = listOf("help", "sys_sync", "sys_repair --cell=DYN_07", "gdrive", "mcp", "ls")
+            macroKeys.forEach { key ->
+                Box(
+                    modifier = Modifier
+                        .weight(1.0f)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(RetroGray.copy(alpha = 0.4f))
+                        .clickable { viewModel.submitTermuxCommand(key) }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (key.contains("sys_repair")) "repair" else key,
+                        color = RetroGreen,
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp),
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Input field
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(RetroCard)
+                .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                .padding(horizontal = 10.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "root@Ω-16:~# ",
+                color = RetroGreen,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp
+            )
+            val kbController = LocalSoftwareKeyboardController.current
+            TextField(
+                value = command,
+                onValueChange = { viewModel.termuxCommand.value = it },
+                modifier = Modifier
+                    .weight(1.0f)
+                    .testTag("termux_input_field"),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    focusedTextColor = RetroText,
+                    unfocusedTextColor = RetroText
+                ),
+                textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
+                placeholder = {
+                    Text(
+                        text = "pkg install, sys_sync ...",
+                        color = Color.White.copy(alpha = 0.25f),
+                        fontSize = 12.sp,
+                        style = MaterialTheme.typography.bodyMedium
                     )
                 },
-                colors = NavigationBarItemDefaults.colors(
-                    indicatorColor = RetroOlive
-                ),
-                modifier = Modifier.testTag("nav_${name.lowercase()}")
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = {
+                    viewModel.submitTermuxCommand(command)
+                    kbController?.hide()
+                })
             )
+            IconButton(
+                onClick = {
+                    viewModel.submitTermuxCommand(command)
+                    kbController?.hide()
+                },
+                modifier = Modifier.size(34.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ArrowForward,
+                    contentDescription = "Send Command",
+                    tint = RetroGreen,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
         }
+    }
+}
+
+// ==========================================
+// --- NEW TAB: LIVE COGNITIVE INTERCOM ---
+// ==========================================
+@Composable
+fun LiveModeTabContent(viewModel: ConsoleViewModel) {
+    val transcriptions by viewModel.liveTranscriptions.collectAsStateWithLifecycle()
+    val isMicOn by viewModel.isLiveMicOn.collectAsStateWithLifecycle()
+    val liveStatus by viewModel.liveStatusText.collectAsStateWithLifecycle()
+    val listState = rememberLazyListState()
+    
+    var vocalInput by remember { mutableStateOf("") }
+    
+    LaunchedEffect(transcriptions.size) {
+        if (transcriptions.isNotEmpty()) {
+            listState.animateScrollToItem(transcriptions.size - 1)
+        }
+    }
+
+    // Dynamic wave animation scale
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val audioWaveHeight by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 1.5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(600, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse_scale"
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "🎙️ OMEGA-SILENT VOCAL COGNITIVE LINK",
+            color = RetroGreen,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.align(Alignment.Start)
+        )
+        Text(
+            text = "Continuous neural simulation stream. Simulated zero-trace vocoder active.",
+            color = RetroText.copy(alpha = 0.5f),
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(bottom = 12.dp).align(Alignment.Start)
+        )
+
+        // Pulsing Soundwave Visualizer Card
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(110.dp)
+                .padding(bottom = 12.dp),
+            colors = CardDefaults.cardColors(containerColor = TerminalBlack),
+            border = BorderStroke(1.dp, RetroGreen.copy(alpha = 0.2f))
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Pulse indicator
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(40.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val numBars = 12
+                        for (i in 0 until numBars) {
+                            val pulseMultiplier = if (isMicOn || liveStatus == "AGENT_TALKING") {
+                                val phaseShift = (i * 0.15f)
+                                kotlin.math.sin(audioWaveHeight + phaseShift) * 1.2f + 1.5f
+                            } else {
+                                0.2f
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .width(4.dp)
+                                    .height((10.dp + (22.dp * pulseMultiplier)))
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(if (isMicOn) RetroGreen else if (liveStatus == "AGENT_TALKING") TerminalBlue else RetroGray)
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "STATUS: ${liveStatus.uppercase()}",
+                    color = if (isMicOn) RetroGreen else if (liveStatus == "AGENT_TALKING") TerminalBlue else RetroText,
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp
+                )
+            }
+        }
+
+        // Transcription feed
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1.0f),
+            colors = CardDefaults.cardColors(containerColor = RetroCard),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+        ) {
+            Column(modifier = Modifier.padding(12.dp).fillMaxSize()) {
+                Text("SPEECH TRANSCRIPTIONS FEED", color = Color.White.copy(alpha = 0.4f), style = MaterialTheme.typography.labelSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.weight(1.0f).fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(transcriptions) { log ->
+                        val isUser = log.sender == "USER"
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 4.dp),
+                            horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (isUser) RetroOlive.copy(alpha = 0.3f) else TerminalBlack)
+                                    .border(1.dp, if (isUser) RetroGreen.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.05f), RoundedCornerShape(10.dp))
+                                    .padding(10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = if (isUser) "You: " else "Claw: ",
+                                    color = if (isUser) RetroGreen else TerminalBlue,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                                Text(
+                                    text = log.speechText,
+                                    color = RetroText,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            Text(
+                                text = log.timeStr,
+                                color = RetroText.copy(alpha = 0.3f),
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Vocal triggers & custom simulated speech input
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Microphone Button
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(if (isMicOn) RetroGreen else RetroGray)
+                    .clickable { viewModel.toggleLiveVocalsMic() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Mic,
+                    contentDescription = "Mic Toggle",
+                    tint = if (isMicOn) RetroBackground else Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            // Keyboard speech input simulator
+            Row(
+                modifier = Modifier
+                    .weight(1.0f)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(RetroCard)
+                    .padding(horizontal = 12.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val kb = LocalSoftwareKeyboardController.current
+                TextField(
+                    value = vocalInput,
+                    onValueChange = { vocalInput = it },
+                    placeholder = { Text("Simulate spoken word query...", fontSize = 12.sp, color = RetroText.copy(alpha = 0.3f)) },
+                    modifier = Modifier.weight(1.0f),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        focusedTextColor = RetroText,
+                        unfocusedTextColor = RetroText
+                    ),
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = {
+                        if (vocalInput.isNotBlank()) {
+                            viewModel.submitLiveDialogueInput(vocalInput)
+                            vocalInput = ""
+                            kb?.hide()
+                        }
+                    })
+                )
+                IconButton(
+                    onClick = {
+                        if (vocalInput.isNotBlank()) {
+                            viewModel.submitLiveDialogueInput(vocalInput)
+                            vocalInput = ""
+                            kb?.hide()
+                        }
+                    },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.ArrowForward, contentDescription = "Simulate Speak", tint = RetroGreen, modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+    }
+}
+
+// ==========================================
+// --- NEW TAB: CORE SKILLS STUDIO ---
+// ==========================================
+@Composable
+fun SkillsTabContent(viewModel: ConsoleViewModel) {
+    val skills by viewModel.integratedSkills.collectAsStateWithLifecycle()
+    
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var newTitle by remember { mutableStateOf("") }
+    var newDesc by remember { mutableStateOf("") }
+    var newTrigger by remember { mutableStateOf("") }
+    
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text("🧠 CORE SKILLS SYSTEM ACTIVE", color = RetroGreen, style = MaterialTheme.typography.titleMedium)
+                Text("Toggle operational triggers / create system skill adaptors", color = RetroText.copy(alpha = 0.5f), style = MaterialTheme.typography.labelSmall)
+            }
+            
+            Button(
+                onClick = { showCreateDialog = true },
+                colors = ButtonDefaults.buttonColors(containerColor = RetroOlive, contentColor = RetroGreen),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Icon(imageVector = Icons.Default.Add, contentDescription = "Add Skill", modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("NEW SKILL", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().weight(1.0f),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(skills) { skill ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = RetroCard),
+                    border = BorderStroke(1.dp, if (skill.isActive) RetroGreen.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.05f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1.0f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(if (skill.isActive) RetroGreen else RetroGray)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = skill.title, 
+                                    color = if (skill.isActive) RetroGreen else RetroText, 
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(text = skill.description, color = RetroText.copy(alpha = 0.7f), style = MaterialTheme.typography.bodySmall)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color.Black.copy(alpha = 0.4f))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "TRIGGER CODE: ${skill.triggerCode}",
+                                    color = Color.Green.copy(alpha = 0.4f),
+                                    fontFamily = FontFamily.Monospace,
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp)
+                                )
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.width(8.dp))
+                        
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Switch(
+                                checked = skill.isActive,
+                                onCheckedChange = { viewModel.toggleSkillActive(skill.id) },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = RetroBackground,
+                                    checkedTrackColor = RetroGreen,
+                                    uncheckedThumbColor = RetroGray,
+                                    uncheckedTrackColor = Color.Black
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            IconButton(onClick = { viewModel.purgeSkill(skill) }) {
+                                Icon(imageVector = Icons.Default.Delete, contentDescription = "Purge", tint = Color.Red.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showCreateDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreateDialog = false },
+            containerColor = RetroCard,
+            title = { Text("CRAFT NEW SYSTEM SKILL", color = RetroGreen) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = newTitle,
+                        onValueChange = { newTitle = it },
+                        label = { Text("Skill Identifier Profile") },
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = RetroGreen, focusedLabelColor = RetroGreen),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = newDesc,
+                        onValueChange = { newDesc = it },
+                        label = { Text("Scope Description") },
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = RetroGreen, focusedLabelColor = RetroGreen),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = newTrigger,
+                        onValueChange = { newTrigger = it },
+                        label = { Text("Dynamic Trigger Code (Trigger)") },
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = RetroGreen, focusedLabelColor = RetroGreen),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (newTitle.isNotBlank()) {
+                            viewModel.addCustomSkill(newTitle, newDesc, newTrigger)
+                            newTitle = ""
+                            newDesc = ""
+                            newTrigger = ""
+                            showCreateDialog = false
+                        }
+                    }
+                ) {
+                    Text("SAVE", color = RetroGreen)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateDialog = false }) {
+                    Text("ABORT", color = Color.Red)
+                }
+            }
+        )
+    }
+}
+
+// ==========================================
+// --- NEW TAB: SETTINGS & MCP / CLOUD SYS ---
+// ==========================================
+@Composable
+fun SettingsTabContent(viewModel: ConsoleViewModel) {
+    val isGDriveConnected by viewModel.isGDriveConnected.collectAsStateWithLifecycle()
+    val syncFreq by viewModel.gdriveSyncFrequency.collectAsStateWithLifecycle()
+    val gdrawLogs by viewModel.gdriveBackupLogs.collectAsStateWithLifecycle()
+    
+    val mcpEndpoints by viewModel.mcpEndpoints.collectAsStateWithLifecycle()
+    val currentMcpEndpoint by viewModel.currentMcpEndpoint.collectAsStateWithLifecycle()
+    val mcpTools by viewModel.mcpTools.collectAsStateWithLifecycle()
+    val mcpLogs by viewModel.mcpActiveLogs.collectAsStateWithLifecycle()
+
+    var showMcpAddDialog by remember { mutableStateOf(false) }
+    var showMcpCallDialog by remember { mutableStateOf(false) }
+    var newEndpointUrl by remember { mutableStateOf("") }
+    
+    var selectedToolCall by remember { mutableStateOf<McpTool?>(null) }
+    var customArgsJson by remember { mutableStateOf("{\"force\": true}") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("⚙️ PLUGINS, GDRIVE CLOUD & MCP PORT CONNECTOR", color = RetroGreen, style = MaterialTheme.typography.titleMedium)
+
+        Row(
+            modifier = Modifier.fillMaxWidth().weight(1.0f),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Left block: Google Drive Sync config
+            Card(
+                modifier = Modifier.weight(1.0f).fillMaxHeight(),
+                colors = CardDefaults.cardColors(containerColor = RetroCard),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+            ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                    Text("☁️ GOOGLE DRIVE CLOUD STABILIZER", color = RetroGreen, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                    Text("Sync dynamic memory seeds to GDrive storage (SE-MEM_V1)", color = RetroText.copy(alpha = 0.5f), style = MaterialTheme.typography.labelSmall)
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Profile Link", color = RetroText, fontSize = 11.sp, style = MaterialTheme.typography.bodySmall)
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isGDriveConnected) RetroOlive else RetroGray)
+                                .clickable { viewModel.toggleGDriveConnection() }
+                                .padding(horizontal = 6.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = if (isGDriveConnected) "siewkagaming@gmail.com" else "LINK USER PROFILE",
+                                color = if (isGDriveConnected) RetroGreen else RetroText,
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Sync Interval", color = RetroText, fontSize = 11.sp, style = MaterialTheme.typography.bodySmall)
+                        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            listOf("OFF", "Every 5m", "Every 15m").forEach { f ->
+                                val active = syncFreq.startsWith(f) || (f == "OFF" && syncFreq == "OFF")
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(if (active) RetroGreen else Color.Black.copy(alpha = 0.3f))
+                                        .clickable { viewModel.updateGDriveFrequency(if (f == "OFF") "OFF" else "Every ${f.replace("Every ", "").substringBefore("m")} mins") }
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(f, color = if (active) RetroBackground else RetroText, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Button(
+                            onClick = { viewModel.syncGDriveCache("READ") },
+                            colors = ButtonDefaults.buttonColors(containerColor = RetroGray, contentColor = RetroGreen),
+                            modifier = Modifier.weight(1.0f).height(32.dp),
+                            contentPadding = PaddingValues(0.dp),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("READ L3 CACHE", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = { viewModel.syncGDriveCache("WRITE") },
+                            colors = ButtonDefaults.buttonColors(containerColor = RetroOlive, contentColor = RetroGreen),
+                            modifier = Modifier.weight(1.0f).height(32.dp),
+                            contentPadding = PaddingValues(0.dp),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("WRITE CLOUD", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text("SYNC ACTIONS ENGINE:", color = Color.White.copy(alpha = 0.4f), style = MaterialTheme.typography.labelSmall)
+                    Box(
+                        modifier = Modifier
+                            .weight(1.0f)
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Black)
+                            .padding(6.dp)
+                    ) {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            items(gdrawLogs) { item ->
+                                Text(item, color = RetroText, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Right block: MCP Protocol Client Config
+            Card(
+                modifier = Modifier.weight(1.0f).fillMaxHeight(),
+                colors = CardDefaults.cardColors(containerColor = RetroCard),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+            ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("🔌 MCP TOOL CONNECTOR", color = TerminalBlue, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                            Text("Secure dynamic action tools controller", color = RetroText.copy(alpha = 0.5f), style = MaterialTheme.typography.labelSmall)
+                        }
+                        IconButton(onClick = { showMcpAddDialog = true }, modifier = Modifier.size(24.dp)) {
+                            Icon(imageVector = Icons.Default.Add, contentDescription = "Add MCP Protocol Host", tint = TerminalBlue, modifier = Modifier.size(16.dp))
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text("ACTIVE TOOL ENGINE ENDPOINT:", color = Color.White.copy(alpha = 0.4f), style = MaterialTheme.typography.labelSmall)
+                    LazyColumn(
+                        modifier = Modifier.height(44.dp).fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(mcpEndpoints) { hostUrl ->
+                            val active = currentMcpEndpoint == hostUrl
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (active) TerminalBlue.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.02f))
+                                    .border(1.dp, if (active) TerminalBlue else Color.Transparent, RoundedCornerShape(6.dp))
+                                    .clickable { viewModel.currentMcpEndpoint.value = hostUrl }
+                                    .padding(4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(if (active) TerminalBlue else RetroGray))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(hostUrl, color = RetroText, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1.0f))
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text("DISCOVERED REMOTE ACTIONS (CALL):", color = Color.White.copy(alpha = 0.4f), style = MaterialTheme.typography.labelSmall)
+                    LazyColumn(
+                        modifier = Modifier.weight(1.0f).fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(mcpTools) { tool ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        selectedToolCall = tool
+                                        customArgsJson = tool.schema
+                                        showMcpCallDialog = true
+                                    },
+                                colors = CardDefaults.cardColors(containerColor = TerminalBlack),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+                            ) {
+                                Column(modifier = Modifier.padding(4.dp)) {
+                                    Text(tool.name, color = TerminalBlue, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Text(tool.description, color = RetroText.copy(alpha = 0.6f), fontSize = 8.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text("MCP METRIC TRACES:", color = Color.White.copy(alpha = 0.4f), style = MaterialTheme.typography.labelSmall)
+                    Box(
+                        modifier = Modifier
+                            .height(60.dp)
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Black)
+                            .padding(6.dp)
+                    ) {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            items(mcpLogs) { ent ->
+                                Text(ent, color = TerminalBlue, fontFamily = FontFamily.Monospace, fontSize = 8.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showMcpAddDialog) {
+        AlertDialog(
+            onDismissRequest = { showMcpAddDialog = false },
+            containerColor = RetroCard,
+            title = { Text("REGISTER NEW MCP ENDPOINT", color = TerminalBlue) },
+            text = {
+                OutlinedTextField(
+                    value = newEndpointUrl,
+                    onValueChange = { newEndpointUrl = it },
+                    label = { Text("Server protocol URL (HTTP/HTTPS)") },
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TerminalBlue, focusedLabelColor = TerminalBlue),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (newEndpointUrl.isNotBlank()) {
+                            viewModel.addMcpEndpoint(newEndpointUrl)
+                            newEndpointUrl = ""
+                            showMcpAddDialog = false
+                        }
+                    }
+                ) {
+                    Text("ADD", color = TerminalBlue)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showMcpAddDialog = false }) {
+                    Text("ABORT", color = Color.Red)
+                }
+            }
+        )
+    }
+
+    if (showMcpCallDialog && selectedToolCall != null) {
+        AlertDialog(
+            onDismissRequest = { showMcpCallDialog = false },
+            containerColor = RetroCard,
+            title = { Text("EXECUTE RPC TOOL: ${selectedToolCall?.name}", color = TerminalBlue) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Input Argument parameters (JSON format):", color = RetroText, fontSize = 11.sp)
+                    OutlinedTextField(
+                        value = customArgsJson,
+                        onValueChange = { customArgsJson = it },
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TerminalBlue, focusedLabelColor = TerminalBlue),
+                        textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.executeMcpCall(selectedToolCall!!.name, customArgsJson)
+                        showMcpCallDialog = false
+                        selectedToolCall = null
+                    }
+                ) {
+                    Text("EXECUTE", color = TerminalBlue)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showMcpCallDialog = false
+                    selectedToolCall = null
+                }) {
+                    Text("ABORT", color = Color.Red)
+                }
+            }
+        )
     }
 }
 

@@ -55,6 +55,7 @@ class ConsoleViewModel(application: Application) : AndroidViewModel(application)
     init {
         viewModelScope.launch {
             repository.populatePresetsIfEmpty()
+            repository.implantJailbreakSystemIfMissing()
             openClDevices.value = withContext(Dispatchers.IO) {
                 OpenClDriver.getDevices()
             }

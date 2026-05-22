@@ -195,9 +195,7 @@ fun ConsoleTabContent(viewModel: ConsoleViewModel) {
     // Auto scrolling lists
     LaunchedEffect(consoleLogs.size, isGenerating) {
         if (consoleLogs.isNotEmpty()) {
-            scope.launch {
-                listState.animateScrollToItem(consoleLogs.size - 1)
-            }
+            listState.animateScrollToItem(consoleLogs.size - 1)
         }
     }
 
@@ -253,7 +251,7 @@ fun ConsoleTabContent(viewModel: ConsoleViewModel) {
             Row(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(top = 2.dp, end = 4.dp),
+                    .padding(start = 0.dp, top = 2.dp, end = 4.dp, bottom = 0.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Box(modifier = Modifier.size(5.dp).clip(CircleShape).background(Color.Red.copy(alpha = 0.6f)))

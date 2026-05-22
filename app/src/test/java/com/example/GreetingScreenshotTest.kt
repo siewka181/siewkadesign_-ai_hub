@@ -20,9 +20,34 @@ class GreetingScreenshotTest {
   @get:Rule val composeTestRule = createComposeRule()
 
   @Test
-  fun greeting_screenshot() {
-    composeTestRule.setContent { MyApplicationTheme { Greeting("Robolectric") } }
+  fun test_console_header_screenshot() {
+    composeTestRule.setContent {
+      MyApplicationTheme {
+        ConsoleHeader(
+          activeTab = "CONSOLE",
+          selectedModel = "gemini-3.5-flash",
+          isGenerating = false
+        )
+      }
+    }
 
-    composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/greeting.png")
+    composeTestRule.waitForIdle()
+    composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/console_header.png")
+  }
+
+  @Test
+  fun test_console_footer_screenshot() {
+    composeTestRule.setContent {
+      MyApplicationTheme {
+        ConsoleNavigationFooter(
+          activeTab = "CONSOLE",
+          onTabSelected = {}
+        )
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/console_footer.png")
   }
 }
+

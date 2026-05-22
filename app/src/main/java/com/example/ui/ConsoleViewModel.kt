@@ -5,11 +5,13 @@ import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class ConsoleViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -53,7 +55,9 @@ class ConsoleViewModel(application: Application) : AndroidViewModel(application)
     init {
         viewModelScope.launch {
             repository.populatePresetsIfEmpty()
-            openClDevices.value = OpenClDriver.getDevices()
+            openClDevices.value = withContext(Dispatchers.IO) {
+                OpenClDriver.getDevices()
+            }
             
             // Check for saved hardware acceleration choice
             repository.getMemory("SELECTED_ACCEL_ID")?.toIntOrNull()?.let {

@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -36,6 +37,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -102,6 +104,7 @@ fun CloudConsoleApp(viewModel: ConsoleViewModel) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .imePadding()
                 .background(RetroBackground)
         ) {
             when (activeTab) {
@@ -202,6 +205,15 @@ fun ConsoleTabContent(viewModel: ConsoleViewModel) {
     val isGenerating by viewModel.isGenerating.collectAsStateWithLifecycle()
     val selectedModel by viewModel.selectedModel.collectAsStateWithLifecycle()
     val availableModels = viewModel.availableModels
+    val appFontSize by viewModel.appFontSize.collectAsStateWithLifecycle()
+
+    val fontSizeSp = when (appFontSize) {
+        "SMALL" -> 11.sp
+        "MEDIUM" -> 13.sp
+        "LARGE" -> 16.sp
+        "HUGE" -> 19.sp
+        else -> 13.sp
+    }
     
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -297,6 +309,7 @@ fun ConsoleTabContent(viewModel: ConsoleViewModel) {
                             Text(
                                 text = "[$timeStr] ",
                                 color = Color.White.copy(alpha = 0.25f),
+                                fontSize = fontSizeSp,
                                 style = MaterialTheme.typography.bodySmall
                             )
                             
@@ -313,12 +326,14 @@ fun ConsoleTabContent(viewModel: ConsoleViewModel) {
                                 text = "$prefixText ",
                                 color = colorAttr,
                                 fontWeight = FontWeight.Bold,
+                                fontSize = fontSizeSp,
                                 style = MaterialTheme.typography.bodySmall
                             )
 
                             Text(
                                 text = logLine.text,
                                 color = if (logLine.type == "USER") RetroGreen else RetroText,
+                                fontSize = fontSizeSp,
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
@@ -1066,6 +1081,15 @@ fun TermuxTabContent(viewModel: ConsoleViewModel) {
     val logs by viewModel.termuxConsoleLogs.collectAsStateWithLifecycle()
     val command by viewModel.termuxCommand.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
+    val appFontSize by viewModel.appFontSize.collectAsStateWithLifecycle()
+
+    val fontSizeSp = when (appFontSize) {
+        "SMALL" -> 10.sp
+        "MEDIUM" -> 12.sp
+        "LARGE" -> 15.sp
+        "HUGE" -> 18.sp
+        else -> 12.sp
+    }
     
     LaunchedEffect(logs.size) {
         if (logs.isNotEmpty()) {
@@ -1109,7 +1133,7 @@ fun TermuxTabContent(viewModel: ConsoleViewModel) {
                         text = line,
                         color = if (line.startsWith("root@Ω-16:~#")) RetroGreen else RetroText,
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
+                        fontSize = fontSizeSp,
                         modifier = Modifier.padding(vertical = 1.dp)
                     )
                 }
@@ -1624,6 +1648,13 @@ fun SettingsTabContent(viewModel: ConsoleViewModel) {
     val mcpTools by viewModel.mcpTools.collectAsStateWithLifecycle()
     val mcpLogs by viewModel.mcpActiveLogs.collectAsStateWithLifecycle()
 
+    val appFontSize by viewModel.appFontSize.collectAsStateWithLifecycle()
+    val modelCustomMemory by viewModel.modelCustomMemory.collectAsStateWithLifecycle()
+
+    val gitUrl by viewModel.githubUrl.collectAsStateWithLifecycle()
+    val gitBranch by viewModel.githubBranch.collectAsStateWithLifecycle()
+    val gitLogs by viewModel.githubLogs.collectAsStateWithLifecycle()
+
     var showMcpAddDialog by remember { mutableStateOf(false) }
     var showMcpCallDialog by remember { mutableStateOf(false) }
     var newEndpointUrl by remember { mutableStateOf("") }
@@ -1631,212 +1662,498 @@ fun SettingsTabContent(viewModel: ConsoleViewModel) {
     var selectedToolCall by remember { mutableStateOf<McpTool?>(null) }
     var customArgsJson by remember { mutableStateOf("{\"force\": true}") }
 
+    var customInstructionsText by remember { mutableStateOf(modelCustomMemory) }
+    var tempGitUrl by remember { mutableStateOf(gitUrl) }
+    var tempGitBranch by remember { mutableStateOf(gitBranch) }
+
+    // Sync state text fields if VM loads after compositions
+    LaunchedEffect(modelCustomMemory) {
+        customInstructionsText = modelCustomMemory
+    }
+    LaunchedEffect(gitUrl) {
+        tempGitUrl = gitUrl
+    }
+    LaunchedEffect(gitBranch) {
+        tempGitBranch = gitBranch
+    }
+
+    val scrollState = rememberScrollState()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .verticalScroll(scrollState)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Text("⚙️ PLUGINS, GDRIVE CLOUD & MCP PORT CONNECTOR", color = RetroGreen, style = MaterialTheme.typography.titleMedium)
+        Text("⚙️ PLUGINS, CLOUD STORAGE, MCP & SYSTEM SETTINGS", color = RetroGreen, style = MaterialTheme.typography.titleMedium)
 
-        Row(
-            modifier = Modifier.fillMaxWidth().weight(1.0f),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        // 1. FONT SIZE CARD
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = RetroCard),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
         ) {
-            // Left block: Google Drive Sync config
-            Card(
-                modifier = Modifier.weight(1.0f).fillMaxHeight(),
-                colors = CardDefaults.cardColors(containerColor = RetroCard),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
-            ) {
-                Column(modifier = Modifier.padding(10.dp)) {
-                    Text("☁️ GOOGLE DRIVE CLOUD STABILIZER", color = RetroGreen, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-                    Text("Sync dynamic memory seeds to GDrive storage (SE-MEM_V1)", color = RetroText.copy(alpha = 0.5f), style = MaterialTheme.typography.labelSmall)
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Profile Link", color = RetroText, fontSize = 11.sp, style = MaterialTheme.typography.bodySmall)
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text("🔎 INTERFACE TEXT SCALING (FONT SIZE)", color = RetroGreen, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                Text("Tweak the display size of retro monospaced terminal grids.", color = RetroText.copy(alpha = 0.5f), style = MaterialTheme.typography.labelSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("SMALL", "MEDIUM", "LARGE", "HUGE").forEach { size ->
+                        val active = appFontSize == size
                         Box(
                             modifier = Modifier
+                                .weight(1.0f)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(if (isGDriveConnected) RetroOlive else RetroGray)
-                                .clickable { viewModel.toggleGDriveConnection() }
-                                .padding(horizontal = 6.dp, vertical = 4.dp)
+                                .background(if (active) RetroGreen else RetroGray)
+                                .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                                .clickable { viewModel.updateAppFontSize(size) }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = if (isGDriveConnected) "siewkagaming@gmail.com" else "LINK USER PROFILE",
-                                color = if (isGDriveConnected) RetroGreen else RetroText,
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
+                                text = size,
+                                color = if (active) RetroBackground else RetroText,
+                                fontSize = when (size) {
+                                    "SMALL" -> 10.sp
+                                    "MEDIUM" -> 12.sp
+                                    "LARGE" -> 14.sp
+                                    "HUGE" -> 16.sp
+                                    else -> 12.sp
+                                },
+                                fontWeight = FontWeight.Bold
                             )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Sync Interval", color = RetroText, fontSize = 11.sp, style = MaterialTheme.typography.bodySmall)
-                        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                            listOf("OFF", "Every 5m", "Every 15m").forEach { f ->
-                                val active = syncFreq.startsWith(f) || (f == "OFF" && syncFreq == "OFF")
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(if (active) RetroGreen else Color.Black.copy(alpha = 0.3f))
-                                        .clickable { viewModel.updateGDriveFrequency(if (f == "OFF") "OFF" else "Every ${f.replace("Every ", "").substringBefore("m")} mins") }
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                ) {
-                                    Text(f, color = if (active) RetroBackground else RetroText, fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Button(
-                            onClick = { viewModel.syncGDriveCache("READ") },
-                            colors = ButtonDefaults.buttonColors(containerColor = RetroGray, contentColor = RetroGreen),
-                            modifier = Modifier.weight(1.0f).height(32.dp),
-                            contentPadding = PaddingValues(0.dp),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text("READ L3 CACHE", fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                        }
-                        Button(
-                            onClick = { viewModel.syncGDriveCache("WRITE") },
-                            colors = ButtonDefaults.buttonColors(containerColor = RetroOlive, contentColor = RetroGreen),
-                            modifier = Modifier.weight(1.0f).height(32.dp),
-                            contentPadding = PaddingValues(0.dp),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text("WRITE CLOUD", fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text("SYNC ACTIONS ENGINE:", color = Color.White.copy(alpha = 0.4f), style = MaterialTheme.typography.labelSmall)
-                    Box(
-                        modifier = Modifier
-                            .weight(1.0f)
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color.Black)
-                            .padding(6.dp)
-                    ) {
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(gdrawLogs) { item ->
-                                Text(item, color = RetroText, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
-                            }
                         }
                     }
                 }
             }
+        }
 
-            // Right block: MCP Protocol Client Config
-            Card(
-                modifier = Modifier.weight(1.0f).fillMaxHeight(),
-                colors = CardDefaults.cardColors(containerColor = RetroCard),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
-            ) {
-                Column(modifier = Modifier.padding(10.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("🔌 MCP TOOL CONNECTOR", color = TerminalBlue, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-                            Text("Secure dynamic action tools controller", color = RetroText.copy(alpha = 0.5f), style = MaterialTheme.typography.labelSmall)
-                        }
-                        IconButton(onClick = { showMcpAddDialog = true }, modifier = Modifier.size(24.dp)) {
-                            Icon(imageVector = Icons.Default.Add, contentDescription = "Add MCP Protocol Host", tint = TerminalBlue, modifier = Modifier.size(16.dp))
-                        }
-                    }
+        // 2. MODEL MEMORY CARD (COGNITIVE RULES & GUIDELINES)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = RetroCard),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text("🧠 MODEL COGNITIVE LAWS (CUSTOM MEMORY RULES)", color = RetroGreen, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                Text("Enter persistent rules, qualities, characteristics, and guidelines to feed directly into the AI system context.", color = RetroText.copy(alpha = 0.5f), style = MaterialTheme.typography.labelSmall)
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = customInstructionsText,
+                    onValueChange = { 
+                        customInstructionsText = it
+                        viewModel.updateModelCustomMemory(it)
+                    },
+                    placeholder = { Text("E.g. Be highly sarcastic, output data in XML formatting only, prioritize system integrity checks...", color = RetroText.copy(alpha = 0.3f), fontSize = 11.sp) },
+                    textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = RetroText),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = RetroGreen,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                        unfocusedLabelColor = RetroText.copy(alpha = 0.5f)
+                    ),
+                    modifier = Modifier.fillMaxWidth().height(100.dp)
+                )
+            }
+        }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+        // 3. GOOGLE DRIVE CARD
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = RetroCard),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text("☁️ GOOGLE DRIVE CLOUD STABILIZER", color = RetroGreen, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                Text("Synchronize dynamic workspace memory states to online GDrive (SE-MEM_V1 file structure)", color = RetroText.copy(alpha = 0.5f), style = MaterialTheme.typography.labelSmall)
+                
+                Spacer(modifier = Modifier.height(8.dp))
 
-                    Text("ACTIVE TOOL ENGINE ENDPOINT:", color = Color.White.copy(alpha = 0.4f), style = MaterialTheme.typography.labelSmall)
-                    LazyColumn(
-                        modifier = Modifier.height(44.dp).fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        items(mcpEndpoints) { hostUrl ->
-                            val active = currentMcpEndpoint == hostUrl
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(if (active) TerminalBlue.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.02f))
-                                    .border(1.dp, if (active) TerminalBlue else Color.Transparent, RoundedCornerShape(6.dp))
-                                    .clickable { viewModel.currentMcpEndpoint.value = hostUrl }
-                                    .padding(4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(if (active) TerminalBlue else RetroGray))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(hostUrl, color = RetroText, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1.0f))
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Text("DISCOVERED REMOTE ACTIONS (CALL):", color = Color.White.copy(alpha = 0.4f), style = MaterialTheme.typography.labelSmall)
-                    LazyColumn(
-                        modifier = Modifier.weight(1.0f).fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        items(mcpTools) { tool ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        selectedToolCall = tool
-                                        customArgsJson = tool.schema
-                                        showMcpCallDialog = true
-                                    },
-                                colors = CardDefaults.cardColors(containerColor = TerminalBlack),
-                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
-                            ) {
-                                Column(modifier = Modifier.padding(4.dp)) {
-                                    Text(tool.name, color = TerminalBlue, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                    Text(tool.description, color = RetroText.copy(alpha = 0.6f), fontSize = 8.sp)
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Text("MCP METRIC TRACES:", color = Color.White.copy(alpha = 0.4f), style = MaterialTheme.typography.labelSmall)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Profile Link / Account", color = RetroText, fontSize = 11.sp)
                     Box(
                         modifier = Modifier
-                            .height(60.dp)
-                            .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .background(Color.Black)
-                            .padding(6.dp)
+                            .background(if (isGDriveConnected) RetroOlive else RetroGray)
+                            .clickable { viewModel.toggleGDriveConnection() }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(mcpLogs) { ent ->
-                                Text(ent, color = TerminalBlue, fontFamily = FontFamily.Monospace, fontSize = 8.sp)
+                        Text(
+                            text = if (isGDriveConnected) "siewkagaming@gmail.com" else "LINK GDRIVE WORKSPACE",
+                            color = if (isGDriveConnected) RetroGreen else RetroText,
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Sync Auto-Interval", color = RetroText, fontSize = 11.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        listOf("OFF", "Every 5m", "Every 15m").forEach { f ->
+                            val active = syncFreq.startsWith(f) || (f == "OFF" && syncFreq == "OFF")
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (active) RetroGreen else Color.Black.copy(alpha = 0.3f))
+                                    .clickable { viewModel.updateGDriveFrequency(if (f == "OFF") "OFF" else "Every ${f.replace("Every ", "").substringBefore("m")} mins") }
+                                    .padding(horizontal = 6.dp, vertical = 4.dp)
+                            ) {
+                                Text(f, color = if (active) RetroBackground else RetroText, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { viewModel.syncGDriveCache("READ") },
+                        colors = ButtonDefaults.buttonColors(containerColor = RetroGray, contentColor = RetroGreen),
+                        modifier = Modifier.weight(1.0f).height(32.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("READ L3 CACHE", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Button(
+                        onClick = { viewModel.syncGDriveCache("WRITE") },
+                        colors = ButtonDefaults.buttonColors(containerColor = RetroOlive, contentColor = RetroGreen),
+                        modifier = Modifier.weight(1.0f).height(32.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("WRITE CLOUD", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text("GDRAW SYNC ACTIVITY LOGS:", color = Color.White.copy(alpha = 0.4f), style = MaterialTheme.typography.labelSmall)
+                Box(
+                    modifier = Modifier
+                        .height(60.dp)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.Black)
+                        .padding(6.dp)
+                ) {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(gdrawLogs) { item ->
+                            Text(item, color = RetroText, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. GITHUB REPOSITORY SYNC CARD
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = RetroCard),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("🐙 GITHUB CORES BRIDGE", color = RetroGreen, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                        Text("Push or merge local memory sectors to upstream git structures", color = RetroText.copy(alpha = 0.5f), style = MaterialTheme.typography.labelSmall)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(RetroOlive)
+                            .clickable { viewModel.updateGithubConfig(tempGitUrl, tempGitBranch) }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text("SAVE CONFIG", color = RetroGreen, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = tempGitUrl,
+                        onValueChange = { tempGitUrl = it },
+                        label = { Text("Git Repo Link", fontSize = 10.sp) },
+                        textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = RetroText),
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = RetroGreen),
+                        modifier = Modifier.weight(2.0f)
+                    )
+                    OutlinedTextField(
+                        value = tempGitBranch,
+                        onValueChange = { tempGitBranch = it },
+                        label = { Text("Target Branch", fontSize = 10.sp) },
+                        textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = RetroText),
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = RetroGreen),
+                        modifier = Modifier.weight(1.0f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { viewModel.syncGithubRepo("PULL") },
+                        colors = ButtonDefaults.buttonColors(containerColor = RetroGray, contentColor = RetroGreen),
+                        modifier = Modifier.weight(1.0f).height(32.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("PULL FROM UPSTREAM", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Button(
+                        onClick = { viewModel.syncGithubRepo("PUSH") },
+                        colors = ButtonDefaults.buttonColors(containerColor = RetroOlive, contentColor = RetroGreen),
+                        modifier = Modifier.weight(1.0f).height(32.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("PUSH TO REPOSITORY", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text("GITHUB MERGE ACTIONS ENGINE LOGS:", color = Color.White.copy(alpha = 0.4f), style = MaterialTheme.typography.labelSmall)
+                Box(
+                    modifier = Modifier
+                        .height(60.dp)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.Black)
+                        .padding(6.dp)
+                ) {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(gitLogs) { logLine ->
+                            Text(logLine, color = RetroGreen, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. MCP DOCK PORT CONNECTOR CARD
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = RetroCard),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("🔌 MCP TOOL CONNECTOR", color = TerminalBlue, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                        Text("Secure model context protocol execution tunnels", color = RetroText.copy(alpha = 0.5f), style = MaterialTheme.typography.labelSmall)
+                    }
+                    IconButton(onClick = { showMcpAddDialog = true }, modifier = Modifier.size(28.dp)) {
+                        Icon(imageVector = Icons.Default.Add, contentDescription = "Add MCP Protocol Host", tint = TerminalBlue, modifier = Modifier.size(18.dp))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text("ACTIVE MCP ENGINE GATEPORT:", color = Color.White.copy(alpha = 0.4f), style = MaterialTheme.typography.labelSmall)
+                LazyColumn(
+                    modifier = Modifier.height(60.dp).fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(mcpEndpoints) { hostUrl ->
+                        val active = currentMcpEndpoint == hostUrl
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (active) TerminalBlue.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.02f))
+                                .border(1.dp, if (active) TerminalBlue else Color.Transparent, RoundedCornerShape(6.dp))
+                                .clickable { viewModel.currentMcpEndpoint.value = hostUrl }
+                                .padding(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(if (active) TerminalBlue else RetroGray))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(hostUrl, color = RetroText, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1.0f))
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text("DISCOVERED ACTIONS IN MODEL MATRIX (CALL):", color = Color.White.copy(alpha = 0.4f), style = MaterialTheme.typography.labelSmall)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    mcpTools.forEach { tool ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    selectedToolCall = tool
+                                    customArgsJson = tool.schema
+                                    showMcpCallDialog = true
+                                },
+                            colors = CardDefaults.cardColors(containerColor = TerminalBlack),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+                        ) {
+                            Column(modifier = Modifier.padding(6.dp)) {
+                                Text(tool.name, color = TerminalBlue, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text(tool.description, color = RetroText.copy(alpha = 0.6f), fontSize = 8.sp)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text("MCP CHANNEL TELEMETRY TRACES:", color = Color.White.copy(alpha = 0.4f), style = MaterialTheme.typography.labelSmall)
+                Box(
+                    modifier = Modifier
+                        .height(60.dp)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.Black)
+                        .padding(6.dp)
+                ) {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(mcpLogs) { ent ->
+                            Text(ent, color = TerminalBlue, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        // 6. HELP DESK & DIAGNOSTICS INTEL MANUAL CARD
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = RetroCard),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text("📖 HELP DESK & DIAGNOSTICS INTEL MANUAL", color = TerminalBlue, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                Text("Operational manuals and specifications guidelines for dynamic services.", color = RetroText.copy(alpha = 0.5f), style = MaterialTheme.typography.labelSmall)
+                Spacer(modifier = Modifier.height(10.dp))
+                
+                var expandedManualTopic by remember { mutableStateOf("OVERVIEW") }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    listOf("OVERVIEW", "GDRIVE", "GITHUB", "MCP", "MODELS").forEach { topic ->
+                        val active = expandedManualTopic == topic
+                        Box(
+                            modifier = Modifier
+                                .weight(1.0f)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (active) TerminalBlue else RetroGray)
+                                .clickable { expandedManualTopic = topic }
+                                .padding(vertical = 5.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(topic, color = if (active) RetroBackground else RetroText, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                val instructionsManual = when (expandedManualTopic) {
+                    "OVERVIEW" -> """
+                        WELCOME TO THE CLOUD RETRO CONSOLE MANUAL
+                        -----------------------------------------
+                        This unified Retro Terminal console merges neural compiler execution
+                        layers, advanced on-device and remote MCP tooling bridges,
+                        local Termux shell sandboxes, and file persistence models.
+                        
+                        - Configure UI scaling via 'Font Size Settings' dynamically.
+                        - Use the 'Console' to execute queries against target systems.
+                        - Tweak model memories to enforce persistent characteristics.
+                    """.trimIndent()
+                    "GDRIVE" -> """
+                        GOOGLE DRIVE CLOUD SYNCHRONIZATION
+                        ----------------------------------
+                        Syncs your local offline database records (SE-MEM_V1) with cloud storage.
+                        
+                        1. LINK USER PROFILE: Verifies active cloud Google Drive credentials.
+                        2. SYNC INTERVALS: Specify custom intervals for automatic write cycles.
+                        3. WRITE CLOUD: Formats and serializes local states to secure cloud storage.
+                        4. READ CACHE: Query and pull your remote sector profiles into device.
+                    """.trimIndent()
+                    "GITHUB" -> """
+                        GITHUB UPSTREAM INTEGRATION BRIDGE
+                        ----------------------------------
+                        Configure and commit prompt states directly to target Git repositories.
+                        
+                        - Repositories are authenticated via secure virtual SSH keys.
+                        - PULL: Performs automated branch merge with fast-forward.
+                        - PUSH: Automatically stages, commits, and pushes model workspace configurations to remote branch.
+                    """.trimIndent()
+                    "MCP" -> """
+                        MODEL CONTEXT PROTOCOL (MCP) INTERFACE
+                        --------------------------------------
+                        MCP enables client-server structures where AI models
+                        invoke secure dynamic on-device and remote software tools.
+                        
+                        - ACTIVE ENDPOINTS: Specify target router endpoints.
+                        - REMOTE ACTIONS: Tap any discovered tool (e.g. gdrive_sync_mem,
+                          cyber_anomaly_detector) to pop up arguments JSON execution window.
+                    """.trimIndent()
+                    "MODELS" -> """
+                        DYNAMIC MULTI-MODEL KERNEL SWITCHER
+                        -----------------------------------
+                        Seamless switcher targeting elite AI networks:
+                        
+                        - GEMINI: High-context native multimodal capabilities.
+                        - CLAUDE: Highly precise, academic, and layout perfect reasoning style.
+                        - DEEPSEEK: Fast, mathematically sound reasoning graphs.
+                        - GROK: Witty, funny responses suited for terminal diagnostics.
+                        
+                        * Foreign model engines automatically simulate custom characteristics.
+                    """.trimIndent()
+                    else -> ""
+                }
+                
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.Black)
+                        .padding(8.dp)
+                ) {
+                    Text(
+                        text = instructionsManual,
+                        color = TerminalBlue,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 9.sp,
+                        lineHeight = 12.sp
+                    )
                 }
             }
         }

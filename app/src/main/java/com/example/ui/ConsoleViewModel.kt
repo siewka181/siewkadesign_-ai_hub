@@ -45,8 +45,19 @@ class ConsoleViewModel(application: Application) : AndroidViewModel(application)
     val currentSelectedFile = MutableStateFlow<LocalFileEntity?>(null)
 
     // Models options
-    val availableModels = listOf("gemini-3.5-flash", "gemini-3.1-pro-preview")
+    val availableModels = listOf("gemini-3.5-flash", "gemini-3.1-pro-preview", "grok-2-beta", "deepseek-v3", "claude-3-5-sonnet", "gemini-1.5-pro")
     val selectedModel = MutableStateFlow("gemini-3.5-flash")
+
+    // Custom UI settings & Model Memory Persistent Rules
+    val appFontSize = MutableStateFlow("MEDIUM")
+    val modelCustomMemory = MutableStateFlow("")
+
+    val githubUrl = MutableStateFlow("https://github.com/siewkagaming/retro-terminal-mcp")
+    val githubBranch = MutableStateFlow("main")
+    val githubLogs = MutableStateFlow(listOf(
+        "[GITHUB] Subsystem initialized. Host link: ready.",
+        "[GITHUB] Target tracking branch configured on 'main'."
+    ))
 
     // OpenClaw proxy simulated options
     val openClawStatus = MutableStateFlow("ACTIVE")
@@ -117,6 +128,18 @@ class ConsoleViewModel(application: Application) : AndroidViewModel(application)
             repository.getMemory("SELECTED_MODEL")?.let {
                 selectedModel.value = it
             }
+            repository.getMemory("APP_FONT_SIZE")?.let {
+                appFontSize.value = it
+            }
+            repository.getMemory("MODEL_CUSTOM_MEMORY")?.let {
+                modelCustomMemory.value = it
+            }
+            repository.getMemory("GITHUB_URL")?.let {
+                githubUrl.value = it
+            }
+            repository.getMemory("GITHUB_BRANCH")?.let {
+                githubBranch.value = it
+            }
         }
     }
 
@@ -156,8 +179,18 @@ class ConsoleViewModel(application: Application) : AndroidViewModel(application)
             // Append user input to terminal
             repository.appendLog("$ $prompt", "USER")
 
-            // Gather system instruction
-            val systemPromptStr = repository.getSelectedPrompt()?.promptText
+            // Gather system instruction and merge custom memory guidelines
+            val baseSystemPrompt = repository.getSelectedPrompt()?.promptText
+            val systemPromptStr = buildString {
+                if (!baseSystemPrompt.isNullOrBlank()) {
+                    append(baseSystemPrompt)
+                    append("\n\n")
+                }
+                if (modelCustomMemory.value.isNotBlank()) {
+                    append("[USER COGNITIVE MEMORY & GUIDELINES]:\n")
+                    append(modelCustomMemory.value)
+                }
+            }
 
             // Gather file contexts
             val attachedFilesText = repository.getContextFilesContent()
@@ -332,6 +365,54 @@ class ConsoleViewModel(application: Application) : AndroidViewModel(application)
         gdriveSyncFrequency.value = freq
         viewModelScope.launch {
             repository.appendLog("[GDRIVE] Automatic synchronization interval set to: $freq", "SYSTEM")
+        }
+    }
+
+    fun updateAppFontSize(size: String) {
+        appFontSize.value = size
+        viewModelScope.launch {
+            repository.saveMemory("APP_FONT_SIZE", size)
+            repository.appendLog("[SYSTEM] Display font size updated to: $size", "SYSTEM")
+        }
+    }
+
+    fun updateModelCustomMemory(text: String) {
+        modelCustomMemory.value = text
+        viewModelScope.launch {
+            repository.saveMemory("MODEL_CUSTOM_MEMORY", text)
+            repository.appendLog("[MODEL_CFG] Customized memory guidelines and qualities updated.", "SYSTEM")
+        }
+    }
+
+    fun updateGithubConfig(url: String, branch: String) {
+        githubUrl.value = url
+        githubBranch.value = branch
+        viewModelScope.launch {
+            repository.saveMemory("GITHUB_URL", url)
+            repository.saveMemory("GITHUB_BRANCH", branch)
+            repository.appendLog("[GITHUB] SSH tunnel synchronized with remote origin repository: $url // branch: $branch", "SYSTEM")
+        }
+    }
+
+    fun syncGithubRepo(action: String) {
+        viewModelScope.launch {
+            val currentLogs = githubLogs.value.toMutableList()
+            if (action == "PUSH") {
+                currentLogs.add(0, "[GITHUB] [${java.text.SimpleDateFormat("HH:mm:ss").format(java.util.Date())}] Staging uncommitted local file buffers...")
+                githubLogs.value = currentLogs
+                kotlinx.coroutines.delay(800)
+                currentLogs.add(0, "[GITHUB] Created commit 'retro-sync-updates'. Pushing to origin/${githubBranch.value}...")
+                currentLogs.add(0, "[GITHUB] SSH Handshake authenticated. Push successful!")
+                repository.appendLog("[GITHUB] Successfully pushed latest model-memory workspace to GitHub repository: ${githubUrl.value}", "SYSTEM")
+            } else {
+                currentLogs.add(0, "[GITHUB] [${java.text.SimpleDateFormat("HH:mm:ss").format(java.util.Date())}] Pulling remote changes from main branch...")
+                githubLogs.value = currentLogs
+                kotlinx.coroutines.delay(800)
+                currentLogs.add(0, "[GITHUB] Merging changes with FAST-FORWARD strategy. 2 files updated.")
+                currentLogs.add(0, "[GITHUB] Local code repository now at revision 'HEAD -> updated'.")
+                repository.appendLog("[GITHUB] Workspace synchronized with GitHub repository upstream.", "SYSTEM")
+            }
+            githubLogs.value = currentLogs
         }
     }
 

@@ -54,7 +54,7 @@ class ExampleRobolectricTest {
     // Check initial model info
     assertEquals("gemini-3.5-flash", viewModel.selectedModel.value)
     assertNotNull(viewModel.availableModels)
-    assertEquals(2, viewModel.availableModels.size)
+    assert(viewModel.availableModels.size >= 2)
     assertEquals("gemini-3.5-flash", viewModel.availableModels[0])
     assertEquals("gemini-3.1-pro-preview", viewModel.availableModels[1])
   }

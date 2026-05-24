@@ -3,11 +3,16 @@ package com.example
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
@@ -52,13 +57,52 @@ import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+
+    private lateinit var mainViewModel: ConsoleViewModel
+
+    private val requestAudioPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            if (::mainViewModel.isInitialized) {
+                mainViewModel.startAudioRecordingReal()
+            }
+        } else {
+            Toast.makeText(this, "Microphone access is required for real-time voice chat.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private val mediaProjectionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK && result.data != null) {
+            val metrics = resources.displayMetrics
+            val intent = Intent(this, ScreenShareService::class.java).apply {
+                putExtra(ScreenShareService.EXTRA_RESULT_CODE, result.resultCode)
+                putExtra(ScreenShareService.EXTRA_DATA_INTENT, result.data)
+                putExtra(ScreenShareService.EXTRA_WIDTH, metrics.widthPixels)
+                putExtra(ScreenShareService.EXTRA_HEIGHT, metrics.heightPixels)
+                putExtra(ScreenShareService.EXTRA_DPI, metrics.densityDpi)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+            if (::mainViewModel.isInitialized) {
+                mainViewModel.startScreenShareReal()
+            }
+        } else {
+            Toast.makeText(this, "Screen capture permission declined.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
         // Handle uncaught exceptions gracefully with diagnostic logcat messages
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             android.util.Log.e("CRASH_HANDLER", "CRITICAL ERROR: Uncaught exception in thread ${thread.name}", throwable)
-            // Still let the system handle standard crash behavior or exit
             System.exit(1)
         }
 
@@ -66,9 +110,33 @@ class MainActivity : ComponentActivity() {
         setContent {
             MyApplicationTheme {
                 val viewModel: ConsoleViewModel = viewModel()
+                mainViewModel = viewModel
                 CloudConsoleApp(viewModel)
             }
         }
+    }
+
+    fun checkAndStartVoiceRecording(viewModel: ConsoleViewModel) {
+        mainViewModel = viewModel
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            viewModel.startAudioRecordingReal()
+        } else {
+            requestAudioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    fun checkAndStartScreenSharing(viewModel: ConsoleViewModel) {
+        mainViewModel = viewModel
+        val mpManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        val intent = mpManager.createScreenCaptureIntent()
+        mediaProjectionLauncher.launch(intent)
+    }
+
+    fun stopScreenSharing(viewModel: ConsoleViewModel) {
+        mainViewModel = viewModel
+        val serviceIntent = Intent(this, ScreenShareService::class.java)
+        stopService(serviceIntent)
+        viewModel.stopScreenShareReal()
     }
 }
 
@@ -1244,6 +1312,12 @@ fun LiveModeTabContent(viewModel: ConsoleViewModel) {
     val transcriptions by viewModel.liveTranscriptions.collectAsStateWithLifecycle()
     val isMicOn by viewModel.isLiveMicOn.collectAsStateWithLifecycle()
     val liveStatus by viewModel.liveStatusText.collectAsStateWithLifecycle()
+    
+    // Custom states
+    val isConnected by viewModel.isConnected.collectAsStateWithLifecycle()
+    val isVoiceActive by viewModel.isVoiceActive.collectAsStateWithLifecycle()
+    val isScreenSharingActive by viewModel.isScreenSharingActive.collectAsStateWithLifecycle()
+    
     val listState = rememberLazyListState()
     
     var vocalInput by remember { mutableStateOf("") }
@@ -1289,13 +1363,13 @@ fun LiveModeTabContent(viewModel: ConsoleViewModel) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(110.dp)
+                .height(130.dp)
                 .padding(bottom = 12.dp),
             colors = CardDefaults.cardColors(containerColor = TerminalBlack),
             border = BorderStroke(1.dp, RetroGreen.copy(alpha = 0.2f))
         ) {
             Column(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().padding(vertical = 8.dp),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -1310,7 +1384,7 @@ fun LiveModeTabContent(viewModel: ConsoleViewModel) {
                     ) {
                         val numBars = 12
                         for (i in 0 until numBars) {
-                            val pulseMultiplier = if (isMicOn || liveStatus == "AGENT_TALKING") {
+                            val pulseMultiplier = if (isVoiceActive || isMicOn || liveStatus == "AGENT_TALKING") {
                                 val phaseShift = (i * 0.15f)
                                 kotlin.math.sin(audioWaveHeight + phaseShift) * 1.2f + 1.5f
                             } else {
@@ -1321,7 +1395,7 @@ fun LiveModeTabContent(viewModel: ConsoleViewModel) {
                                     .width(4.dp)
                                     .height((10.dp + (22.dp * pulseMultiplier)))
                                     .clip(RoundedCornerShape(2.dp))
-                                    .background(if (isMicOn) RetroGreen else if (liveStatus == "AGENT_TALKING") TerminalBlue else RetroGray)
+                                    .background(if (isVoiceActive || isMicOn) RetroGreen else if (liveStatus == "AGENT_TALKING") TerminalBlue else RetroGray)
                             )
                         }
                     }
@@ -1329,11 +1403,39 @@ fun LiveModeTabContent(viewModel: ConsoleViewModel) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "STATUS: ${liveStatus.uppercase()}",
-                    color = if (isMicOn) RetroGreen else if (liveStatus == "AGENT_TALKING") TerminalBlue else RetroText,
+                    color = if (isVoiceActive || isMicOn) RetroGreen else if (liveStatus == "AGENT_TALKING") TerminalBlue else RetroText,
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp
                 )
+                Spacer(modifier = Modifier.height(4.dp))
+                // Network Link status
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "LINK: ${if (isConnected) "ONLINE" else "OFFLINE"}",
+                        color = if (isConnected) RetroGreen else Color.Red.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp
+                    )
+                    Text(
+                        text = "MIC: ${if (isVoiceActive) "ACTIVE" else "STANDBY"}",
+                        color = if (isVoiceActive) RetroGreen else RetroGray,
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp
+                    )
+                    Text(
+                        text = "MATRIX: ${if (isScreenSharingActive) "STREAMING" else "STANDBY"}",
+                        color = if (isScreenSharingActive) RetroGreen else RetroGray,
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp
+                    )
+                }
             }
         }
 
@@ -1402,19 +1504,68 @@ fun LiveModeTabContent(viewModel: ConsoleViewModel) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Microphone Button
+            val context = LocalContext.current
+            val activity = context as? MainActivity
+
+            // 1. WS Connect Button
             Box(
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(44.dp)
                     .clip(CircleShape)
-                    .background(if (isMicOn) RetroGreen else RetroGray)
-                    .clickable { viewModel.toggleLiveVocalsMic() },
+                    .background(if (isConnected) TerminalBlue else RetroGray)
+                    .clickable { viewModel.toggleWebSocketConnection() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CloudQueue,
+                    contentDescription = "Socket Toggle",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            // 2. Real-time Microphone Button
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(if (isVoiceActive) RetroGreen else RetroGray)
+                    .clickable {
+                        if (isVoiceActive) {
+                            viewModel.stopVoiceVoice()
+                        } else {
+                            activity?.checkAndStartVoiceRecording(viewModel)
+                        }
+                    },
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.Mic,
                     contentDescription = "Mic Toggle",
-                    tint = if (isMicOn) RetroBackground else Color.White,
+                    tint = if (isVoiceActive) RetroBackground else Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            // 3. Screen Sharing Toggle Button
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(if (isScreenSharingActive) RetroGreen else RetroGray)
+                    .clickable {
+                        if (isScreenSharingActive) {
+                            activity?.stopScreenSharing(viewModel)
+                        } else {
+                            activity?.checkAndStartScreenSharing(viewModel)
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ScreenShare,
+                    contentDescription = "Screen Share Toggle",
+                    tint = if (isScreenSharingActive) RetroBackground else Color.White,
                     modifier = Modifier.size(20.dp)
                 )
             }

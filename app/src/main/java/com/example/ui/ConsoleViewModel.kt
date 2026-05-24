@@ -108,6 +108,15 @@ class ConsoleViewModel(application: Application) : AndroidViewModel(application)
     // --- NEW: Live Mode Dialogue States ---
     val isLiveMicOn = MutableStateFlow(false)
     val liveStatusText = MutableStateFlow("LIVE_IDLE")
+
+    // --- REAL-TIME CUSTOM WEBSOCKET STREAMING STATES ---
+    val isConnected = MutableStateFlow(false)
+    val isVoiceActive = MutableStateFlow(false)
+    val isScreenSharingActive = MutableStateFlow(false)
+
+    private val audioRecorder = AudioRecorderManager()
+    private val audioPlayer = AudioPlayerManager()
+
     val liveTranscriptions = MutableStateFlow(listOf(
         LiveLog("USER", "Confirm current EL2 hypervisor page memory state is secure.", "23:02:15"),
         LiveLog("AGENT", "[Audio Feed]: Standard integrity scan shows 0 executable flips. Active shadow mapping is operating silently within target parameters.", "23:02:20")
@@ -680,6 +689,120 @@ class ConsoleViewModel(application: Application) : AndroidViewModel(application)
             
             liveStatusText.value = "MIC_LISTENING"
         }
+    }
+
+    // --- REAL-TIME CUSTOM AUDIO & SCREEN WEBSOCKET TRANSMISSION ENGINE ---
+    fun toggleWebSocketConnection() {
+        if (isConnected.value) {
+            disconnectClaw()
+        } else {
+            connectClaw()
+        }
+    }
+
+    fun connectClaw() {
+        viewModelScope.launch {
+            repository.appendLog("[OpenClaw] Commencing secure uplink sequence to wss://siewka.taild53118.ts.net ...", "SYSTEM")
+            OpenClawClient.connect(
+                url = "wss://siewka.taild53118.ts.net",
+                onConnect = {
+                    viewModelScope.launch {
+                        isConnected.value = true
+                        repository.appendLog("[OpenClaw] Connection established. Telemetry buffers online.", "SYSTEM")
+                    }
+                },
+                onDisconnect = {
+                    viewModelScope.launch {
+                        isConnected.value = false
+                        stopVoiceVoice()
+                        stopScreenShareReal()
+                        repository.appendLog("[OpenClaw] Connection terminated by host.", "SYSTEM")
+                    }
+                },
+                onAudioReceived = { audioChunk ->
+                    audioPlayer.playAudioChunk(audioChunk)
+                },
+                onMessageReceived = { message ->
+                    viewModelScope.launch {
+                        val list = liveTranscriptions.value.toMutableList()
+                        val timeStr = java.text.SimpleDateFormat("HH:mm:ss").format(java.util.Date())
+                        list.add(LiveLog("AGENT", message, timeStr))
+                        liveTranscriptions.value = list
+                        
+                        repository.appendLog("[Claw Gateway]: $message", "MODEL")
+                    }
+                }
+            )
+        }
+    }
+
+    fun disconnectClaw() {
+        viewModelScope.launch {
+            stopVoiceVoice()
+            stopScreenShareReal()
+            OpenClawClient.disconnect()
+            isConnected.value = false
+            repository.appendLog("[OpenClaw] Link offline.", "SYSTEM")
+        }
+    }
+
+    fun startAudioRecordingReal() {
+        viewModelScope.launch {
+            if (!OpenClawClient.isConnected) {
+                connectClaw()
+            }
+            isVoiceActive.value = true
+            isLiveMicOn.value = true
+            liveStatusText.value = "MIC_LISTENING"
+            
+            audioPlayer.startPlayback()
+            val ok = audioRecorder.startRecording { audioChunk ->
+                OpenClawClient.sendAudioFrame(audioChunk)
+            }
+            if (ok) {
+                repository.appendLog("[Vocal Service] Continuously streaming real-time PCM audio packages (16kHz)...", "SYSTEM")
+            } else {
+                isVoiceActive.value = false
+                isLiveMicOn.value = false
+                liveStatusText.value = "LIVE_IDLE"
+                repository.appendLog("[Vocal Service] RECORD_AUDIO capture startup failure. Verified mic device states.", "ERROR")
+            }
+        }
+    }
+
+    fun stopVoiceVoice() {
+        viewModelScope.launch {
+            isVoiceActive.value = false
+            isLiveMicOn.value = false
+            liveStatusText.value = "LIVE_IDLE"
+            audioRecorder.stopRecording()
+            audioPlayer.stopPlayback()
+            repository.appendLog("[Vocal Service] Voice audio capture and playback channels closed.", "SYSTEM")
+        }
+    }
+
+    fun startScreenShareReal() {
+        if (!OpenClawClient.isConnected) {
+            connectClaw()
+        }
+        isScreenSharingActive.value = true
+        viewModelScope.launch {
+            repository.appendLog("[Screen Capture] MediaProjection active. Encoding and streaming video frames...", "SYSTEM")
+        }
+    }
+
+    fun stopScreenShareReal() {
+        isScreenSharingActive.value = false
+        viewModelScope.launch {
+            repository.appendLog("[Screen Capture] Screen capturing source stopped.", "SYSTEM")
+        }
+    }
+
+    override fun onCleared() {
+        audioRecorder.stopRecording()
+        audioPlayer.stopPlayback()
+        OpenClawClient.disconnect()
+        super.onCleared()
     }
 }
 
